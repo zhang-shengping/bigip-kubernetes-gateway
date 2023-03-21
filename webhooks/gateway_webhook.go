@@ -2,6 +2,7 @@ package webhooks
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/zongzw/f5-bigip-rest/utils"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -14,7 +15,8 @@ type GatewayWebhook struct {
 }
 
 func (wh *GatewayWebhook) ValidateCreate(ctx context.Context, obj runtime.Object) error {
-	return nil
+	fmt.Printf("%T,\n %v\n", obj, obj)
+	return fmt.Errorf("test")
 }
 
 func (wh *GatewayWebhook) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) error {

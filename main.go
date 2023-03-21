@@ -249,26 +249,27 @@ func setupReconcilers(mgr manager.Manager) {
 
 func setupWebhooks(mgr manager.Manager) error {
 	slog := utils.NewLog().WithLevel(level).WithRequestID(uuid.NewString())
-	if err := (&webhooks.GatewayClassWebhook{Logger: slog}).
-		SetupWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "gatewayclass")
-		os.Exit(1)
-	}
+	// if err := (&webhooks.GatewayClassWebhook{Logger: slog}).
+	// 	SetupWebhookWithManager(mgr); err != nil {
+	// 	setupLog.Error(err, "unable to create webhook", "webhook", "gatewayclass")
+	// 	os.Exit(1)
+	// }
 	if err := (&webhooks.GatewayWebhook{Logger: slog}).
 		SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "gateway")
 		os.Exit(1)
 	}
-	if err := (&webhooks.HTTPRouteWebhook{Logger: slog}).
-		SetupWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "httproute")
-		os.Exit(1)
-	}
-	if err := (&webhooks.ReferenceGrantWebhook{Logger: slog}).
-		SetupWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create webhook", "webhook", "referencegrant")
-		os.Exit(1)
-	}
+	// for foucs on the gateway test
+	// if err := (&webhooks.HTTPRouteWebhook{Logger: slog}).
+	// 	SetupWebhookWithManager(mgr); err != nil {
+	// 	setupLog.Error(err, "unable to create webhook", "webhook", "httproute")
+	// 	os.Exit(1)
+	// }
+	// if err := (&webhooks.ReferenceGrantWebhook{Logger: slog}).
+	// 	SetupWebhookWithManager(mgr); err != nil {
+	// 	setupLog.Error(err, "unable to create webhook", "webhook", "referencegrant")
+	// 	os.Exit(1)
+	// }
 
 	return nil
 }
