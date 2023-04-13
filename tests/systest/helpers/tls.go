@@ -18,22 +18,129 @@ type CAPrivateKey []byte
 type ServerCertPEM []byte
 type ServerPrivateKey []byte
 
-var default_ca = &x509.Certificate{
-	SerialNumber: big.NewInt(2019),
-	Subject: pkix.Name{
-		Organization:  []string{"F5"},
-		Country:       []string{"US"},
-		Province:      []string{""},
-		Locality:      []string{"Seattle"},
-		StreetAddress: []string{"WA Corporate HQ 801 5th Ave"},
-		PostalCode:    []string{"98104"},
-	},
-	NotBefore:             time.Now(),
-	NotAfter:              time.Now().AddDate(10, 0, 0),
-	IsCA:                  true,
-	ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-	KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
-	BasicConstraintsValid: true,
+// var default_ca = &x509.Certificate{
+// 	SerialNumber: big.NewInt(2019),
+// 	Subject: pkix.Name{
+// 		Organization:  []string{"F5"},
+// 		Country:       []string{"US"},
+// 		Province:      []string{""},
+// 		Locality:      []string{"Seattle"},
+// 		StreetAddress: []string{"WA Corporate HQ 801 5th Ave"},
+// 		PostalCode:    []string{"98104"},
+// 	},
+// 	NotBefore:             time.Now(),
+// 	NotAfter:              time.Now().AddDate(10, 0, 0),
+// 	IsCA:                  true,
+// 	ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+// 	KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+// 	BasicConstraintsValid: true,
+// }
+
+type ConfigCertificates func(*Certificates)
+
+func SetCaCrt(ca *x509.Certificate) ConfigCertificates {
+	return func(certificates *Certificates) {
+		certificates.CAcrt = ca
+	}
+}
+
+func SetServerCrt(serverca *x509.Certificate) ConfigCertificates {
+	return func(certificates *Certificates) {
+		certificates.Servercrt = serverca
+	}
+}
+
+type CertificateGenerator interface {
+	GenerateCA() (CAPEM, CAPrivateKey, error)
+	GenerateServerCert(caPem CAPEM, caPrivKeyPem CAPrivateKey) (ServerCertPEM, ServerPrivateKey, error)
+}
+
+type Certificates struct {
+	CAcrt     *x509.Certificate
+	Servercrt *x509.Certificate
+}
+
+func NewCertificates(configs ...ConfigCertificates) *Certificates {
+	certificates := &Certificates{
+		CAcrt: &x509.Certificate{
+			SerialNumber: big.NewInt(2019),
+			Subject: pkix.Name{
+				Organization:  []string{"F5"},
+				Country:       []string{"US"},
+				Province:      []string{""},
+				Locality:      []string{"Seattle"},
+				StreetAddress: []string{"WA Corporate HQ 801 5th Ave"},
+				PostalCode:    []string{"98104"},
+			},
+			NotBefore:             time.Now(),
+			NotAfter:              time.Now().AddDate(10, 0, 0),
+			IsCA:                  true,
+			ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+			KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageCertSign,
+			BasicConstraintsValid: true,
+		},
+
+		Servercrt: &x509.Certificate{
+			SerialNumber: big.NewInt(2019),
+			Subject: pkix.Name{
+				Organization:  []string{"F5, Dev."},
+				Country:       []string{"CN"},
+				Province:      []string{""},
+				Locality:      []string{"Beijing"},
+				StreetAddress: []string{"Jiang Guo Road"},
+				PostalCode:    []string{"100000"},
+			},
+			IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
+			NotBefore:    time.Now(),
+			NotAfter:     time.Now().AddDate(10, 0, 0),
+			SubjectKeyId: []byte{1, 2, 3, 4, 5},
+			ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+			KeyUsage:     x509.KeyUsageDigitalSignature,
+		},
+	}
+	for _, config := range configs {
+		config(certificates)
+	}
+	return certificates
+}
+
+func (crt *Certificates) GenerateCA() (CAPEM, CAPrivateKey, error) {
+	if crt.CAcrt == nil {
+		return nil, nil, fmt.Errorf("CA x509.Certificate defination is not set")
+	}
+
+	rawPrivKey, err := rsa.GenerateKey(rand.Reader, 4096)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return sign(crt.CAcrt, crt.CAcrt, rawPrivKey)
+}
+
+func (crt *Certificates) GenerateServerCert(caPem CAPEM, caPrivKeyPem CAPrivateKey) (ServerCertPEM, ServerPrivateKey, error) {
+	if crt.Servercrt == nil {
+		return nil, nil, fmt.Errorf("server x509.Certificate defination is not set")
+	}
+
+	caPemBlock, _ := pem.Decode(caPem)
+	if caPemBlock == nil {
+		return nil, nil, fmt.Errorf("can not decode CA Certificate")
+	}
+	ca, err := x509.ParseCertificate(caPemBlock.Bytes)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	caPrivKeyBlock, _ := pem.Decode(caPrivKeyPem)
+	if caPrivKeyBlock == nil {
+		return nil, nil, fmt.Errorf("can not decode CA Private Key")
+	}
+	caPrivKey, err := x509.ParsePKCS1PrivateKey(caPrivKeyBlock.Bytes)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return sign(crt.Servercrt, ca, caPrivKey)
 }
 
 func sign(crt, ca *x509.Certificate, caPrivKey *rsa.PrivateKey) ([]byte, []byte, error) {
@@ -61,63 +168,63 @@ func sign(crt, ca *x509.Certificate, caPrivKey *rsa.PrivateKey) ([]byte, []byte,
 	return crtPem.Bytes(), crtPrivKeyPem.Bytes(), nil
 }
 
-func GenerateCA(ca *x509.Certificate) (CAPEM, CAPrivateKey, error) {
-	if ca == nil {
-		ca = default_ca
-	}
+// func GenerateCA(ca *x509.Certificate) (CAPEM, CAPrivateKey, error) {
+// 	if ca == nil {
+// 		ca = default_ca
+// 	}
 
-	rawPrivKey, err := rsa.GenerateKey(rand.Reader, 4096)
-	if err != nil {
-		return nil, nil, err
-	}
+// 	rawPrivKey, err := rsa.GenerateKey(rand.Reader, 4096)
+// 	if err != nil {
+// 		return nil, nil, err
+// 	}
 
-	return sign(ca, ca, rawPrivKey)
-}
+// 	return sign(ca, ca, rawPrivKey)
+// }
 
-var default_cert = &x509.Certificate{
-	SerialNumber: big.NewInt(2019),
-	Subject: pkix.Name{
-		Organization:  []string{"F5, Dev."},
-		Country:       []string{"CN"},
-		Province:      []string{""},
-		Locality:      []string{"Beijing"},
-		StreetAddress: []string{"Jiang Guo Road"},
-		PostalCode:    []string{"100000"},
-	},
-	IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
-	NotBefore:    time.Now(),
-	NotAfter:     time.Now().AddDate(10, 0, 0),
-	SubjectKeyId: []byte{1, 2, 3, 4, 5},
-	ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
-	KeyUsage:     x509.KeyUsageDigitalSignature,
-}
+// var default_cert = &x509.Certificate{
+// 	SerialNumber: big.NewInt(2019),
+// 	Subject: pkix.Name{
+// 		Organization:  []string{"F5, Dev."},
+// 		Country:       []string{"CN"},
+// 		Province:      []string{""},
+// 		Locality:      []string{"Beijing"},
+// 		StreetAddress: []string{"Jiang Guo Road"},
+// 		PostalCode:    []string{"100000"},
+// 	},
+// 	IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1), net.IPv6loopback},
+// 	NotBefore:    time.Now(),
+// 	NotAfter:     time.Now().AddDate(10, 0, 0),
+// 	SubjectKeyId: []byte{1, 2, 3, 4, 5},
+// 	ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+// 	KeyUsage:     x509.KeyUsageDigitalSignature,
+// }
 
-func GenerateServerCert(serverCert *x509.Certificate, caPem CAPEM, caPrivKeyPem CAPrivateKey) (ServerCertPEM, ServerPrivateKey, error) {
+// func GenerateServerCert(serverCert *x509.Certificate, caPem CAPEM, caPrivKeyPem CAPrivateKey) (ServerCertPEM, ServerPrivateKey, error) {
 
-	caPemBlock, _ := pem.Decode(caPem)
-	if caPemBlock == nil {
-		return nil, nil, fmt.Errorf("can not decode CA Certificate")
-	}
-	ca, err := x509.ParseCertificate(caPemBlock.Bytes)
-	if err != nil {
-		return nil, nil, err
-	}
+// 	caPemBlock, _ := pem.Decode(caPem)
+// 	if caPemBlock == nil {
+// 		return nil, nil, fmt.Errorf("can not decode CA Certificate")
+// 	}
+// 	ca, err := x509.ParseCertificate(caPemBlock.Bytes)
+// 	if err != nil {
+// 		return nil, nil, err
+// 	}
 
-	caPrivKeyBlock, _ := pem.Decode(caPrivKeyPem)
-	if caPrivKeyBlock == nil {
-		return nil, nil, fmt.Errorf("can not decode CA Private Key")
-	}
-	caPrivKey, err := x509.ParsePKCS1PrivateKey(caPrivKeyBlock.Bytes)
-	if err != nil {
-		return nil, nil, err
-	}
+// 	caPrivKeyBlock, _ := pem.Decode(caPrivKeyPem)
+// 	if caPrivKeyBlock == nil {
+// 		return nil, nil, fmt.Errorf("can not decode CA Private Key")
+// 	}
+// 	caPrivKey, err := x509.ParsePKCS1PrivateKey(caPrivKeyBlock.Bytes)
+// 	if err != nil {
+// 		return nil, nil, err
+// 	}
 
-	if serverCert == nil {
-		serverCert = default_cert
-	}
+// 	if serverCert == nil {
+// 		serverCert = default_cert
+// 	}
 
-	return sign(serverCert, ca, caPrivKey)
-}
+// 	return sign(serverCert, ca, caPrivKey)
+// }
 
 func VerifyServerWithCA(caPem []byte, serverPem []byte) error {
 	caBlock, _ := pem.Decode(caPem)

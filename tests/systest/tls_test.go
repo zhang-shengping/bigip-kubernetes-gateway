@@ -32,9 +32,9 @@ var _ = Describe("TLS TEST", Label("tls"), Ordered, func() {
 
 	BeforeAll(func() {
 		var err error
-
+		crts := helpers.NewCertificates()
 		By("Create CA and CA private key")
-		ca, caPrivKey, err = helpers.GenerateCA(nil)
+		ca, caPrivKey, err = crts.GenerateCA()
 		Expect(err).To(BeNil())
 		Expect(ca).NotTo(BeNil())
 		Expect(caPrivKey).NotTo(BeNil())
@@ -43,7 +43,7 @@ var _ = Describe("TLS TEST", Label("tls"), Ordered, func() {
 		GinkgoWriter.Printf("CA:\n %s\n", caPrivKey)
 
 		By("Create server certificate and private key")
-		serverCert, serverPrivKey, err = helpers.GenerateServerCert(nil, ca, caPrivKey)
+		serverCert, serverPrivKey, err = crts.GenerateServerCert(ca, caPrivKey)
 		Expect(err).To(BeNil())
 		Expect(serverCert).NotTo(BeNil())
 		Expect(serverPrivKey).NotTo(BeNil())
